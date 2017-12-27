@@ -1,4 +1,7 @@
 from Crypto.Cipher import AES
+import xor 
+import random
+import itertools
 
 def decryptAES_ECB(ciphertext, key):
     """Decrypt a ciphertext encrypted under AES ECB mode.
@@ -23,6 +26,32 @@ def encryptAES_ECB(plaintext, key):
     """
     cipher = AES.new(key, AES.MODE_ECB)
     return cipher.encrypt(plaintext) 
+
+def encryptAES_CBC(plaintext, key, IV):
+    """Encrypt a plaintext under AES CBC mode."""
+    blockSize = len(key)
+    plaintextBlocks = blockSplit(plaintext, blockSize)
+    prevBlock = IV
+    ciphertext = bytes()
+    for block in plaintextBlocks:
+        block = xor.xorBytes(block, prevBlock)
+        encryptedBlock = encryptAES_ECB(block, key)
+        ciphertext += encryptedBlock
+        prevBlock = encryptedBlock
+    return ciphertext
+
+def decryptAES_CBC(ciphertext, key, IV): 
+    """Decrypt a ciphertext encrypted under AES CBC mode"""
+    blockSize = len(key)
+    cipherTextBlocks = blockSplit(ciphertext, blockSize)
+    numBlocks = len(cipherTextBlocks)
+    plainText = bytes()
+    prevBlocks = [IV] + cipherTextBlocks[:-1] #to uncombine 
+    for currentBlock, prevBlock in zip(reversed(cipherTextBlocks), 
+                                       reversed(prevBlocks)):
+        decryptedBlock = decryptAES_ECB(currentBlock, key)
+        plainText = xor.xorBytes(decryptedBlock, prevBlock) + plainText
+    return plainText
 
 def pkcsPadding(byteArray, blockSize):
     """Pads a bytearray using PKCS#7 padding.
@@ -63,3 +92,38 @@ def blockSplit(obj, blockSize):
         raise ValueError("blockSize must divide the length of the object")
     else:
         return [obj[i:i+blockSize] for i in range(0, obj_length, blockSize)]
+
+def generateRandomBytes(length):
+    """Generates random bytes of a given length"""
+    return bytes([random.randrange(256) for _ in range(length)])
+
+def containsDuplicates(text, blockSize):
+    """Detects whether duplicate blocks are present in the text"""
+    blocks = blockSplit(text, blockSize) 
+    for x, y in itertools.combinations(blocks, 2):
+        if x == y:
+            return True
+    return False
+
+def encryption_oracle(plaintext, blockSize=16):
+    """Encrypts under ECB or CBC randomly"""
+    prefix = generateRandomBytes(random.randint(5, 10))
+    suffix = generateRandomBytes(random.randint(5, 10))
+    padded = pkcsPadding(prefix + plaintext + suffix, blockSize)
+
+    key = generateRandomBytes(blockSize)
+    if random.choice([0, 1]):
+        print("ECB used")
+        return encryptAES_ECB(padded, key)
+    else:
+        print("CBC used")
+        IV = generateRandomBytes(blockSize)
+        return encryptAES_CBC(padded, key, IV)
+
+def ECB_CBC_detection(encryptor, blockSize=16):
+    """Detects whether the encrytor function is using ECB or CBC"""
+    if containsDuplicates(encryptor(b'a' * blockSize * 10),
+                          blockSize=blockSize):
+        print("Detected ECB")
+    else:
+        print("Detected CBC")
