@@ -71,6 +71,9 @@ def pkcsPadding(byteArray, blockSize):
     paddingLength = blockSize - (len(byteArray) % blockSize)
     return byteArray + bytearray(paddingLength * [paddingLength])
 
+def remove_pkcs_padding(b):
+    return b[:-b[-1]]
+
 def blockSplit(obj, blockSize):
     """Splits an object into blocks of a given size.
     
@@ -105,6 +108,14 @@ def containsDuplicates(text, blockSize):
             return True
     return False
 
+def findDuplicateBlock(text, blockSize):
+    """Finds the value of duplicate blocks in the text"""
+    blocks = blockSplit(text, blockSize) 
+    for x, y in itertools.combinations(blocks, 2):
+        if x == y:
+            return x
+    return None
+
 def encryption_oracle(plaintext, blockSize=16):
     """Encrypts under ECB or CBC randomly"""
     prefix = generateRandomBytes(random.randint(5, 10))
@@ -120,10 +131,74 @@ def encryption_oracle(plaintext, blockSize=16):
         IV = generateRandomBytes(blockSize)
         return encryptAES_CBC(padded, key, IV)
 
-def ECB_CBC_detection(encryptor, blockSize=16):
+def create_ECB_encryptor(blockSize=16, random_prefix=False):
+    key = generateRandomBytes(blockSize)
+    if random_prefix:
+         prefix = generateRandomBytes(random.randint(1, 100))
+    else:
+        prefix = b''
+    def ECB_encryption_oracle(my_input, unknown_string):
+        padded = pkcsPadding(prefix + my_input + unknown_string, blockSize)
+        return encryptAES_ECB(padded, key)
+    return ECB_encryption_oracle
+
+def ECB_CBC_detection(encryptor, *args, blockSize=16):
     """Detects whether the encrytor function is using ECB or CBC"""
-    if containsDuplicates(encryptor(b'a' * blockSize * 10),
+    if containsDuplicates(encryptor(b'a' * blockSize * 10, *args),
                           blockSize=blockSize):
         print("Detected ECB")
     else:
         print("Detected CBC")
+
+def calculate_block_size(encryptor, *args):
+    """Calculates block size of an encryptor.
+    
+    The encryptor should take an arbitrary input as the first argument, and
+    other arguments can be supplied."""
+    diffs = []
+    for _ in range(20):
+        filler = bytes()
+        basic_length = current_length = len(encryptor(filler, *args))
+        while basic_length == current_length:
+            filler += b'A'
+            current_length = len(encryptor(filler, *args))
+        diffs.append(abs(current_length - basic_length))
+    return min(diffs)
+
+def bytewise_ECB_decrypt(encryptor, *args, blockSize=16):
+    """Given an oracle that encrypts (user_input || unknown_string) under
+    ECB, find unknown_string."""
+    string_length = len(encryptor(bytes(), *args)) 
+    plaintext = bytes()
+    for i in range(string_length):
+        block_number, position = divmod(i, blockSize)
+        filler = b'A' * (blockSize - position - 1)
+        if i >= blockSize - 1:
+            byte_short = plaintext[-(blockSize - 1):]
+        else:
+            byte_short = filler + plaintext
+        possible_blocks = [byte_short + bytes([b]) for b in range(256)]
+        last_byte = {encryptor(bl, *args)[:blockSize]:
+                     bytes([bl[-1]]) for bl in possible_blocks}
+        start = block_number * blockSize
+        end = start + blockSize
+        try:
+            plaintext += last_byte[encryptor(filler, *args)[start:end]]
+        except KeyError:
+            break
+    return plaintext
+
+def key_value_parser(encoding):
+    """Given a key/value encoding, produces the corresponding dict"""
+    items = [item.split('=') for item in encoding.decode().split('&')]
+    return {k: v for k, v in items}
+
+def profile_for(email_address):
+    profile_for.counter += 1
+    email_address = email_address.replace('&', '').replace('=', '')
+    profile = {'email': email_address, 
+               'uid': str(profile_for.counter),
+               'role': 'user'}
+    encoded = '&'.join(['='.join(item) for item in profile.items()])
+    return encoded.encode(encoding='ascii')
+profile_for.counter = 0
