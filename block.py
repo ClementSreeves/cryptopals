@@ -71,8 +71,16 @@ def pkcsPadding(byteArray, blockSize):
     paddingLength = blockSize - (len(byteArray) % blockSize)
     return byteArray + bytearray(paddingLength * [paddingLength])
 
-def remove_pkcs_padding(b):
-    return b[:-b[-1]]
+class PaddingError(Exception):
+    pass
+
+def remove_pkcs_padding(b, block_size=16):
+    valid_length = len(b) % block_size == 0
+    valid_padding = all([x == b[-1] for x in b[-b[-1]:]])
+    if valid_length and valid_padding:
+        return b[:-b[-1]]
+    else:
+        raise PaddingError("String has incorrect padding")
 
 def blockSplit(obj, blockSize):
     """Splits an object into blocks of a given size.
