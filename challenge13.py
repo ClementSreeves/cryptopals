@@ -22,7 +22,7 @@ profile_for.counter = 0
 
 def profile_encryptor(encoded_profile, key):
     return block.encryptAES_ECB(block.pkcsPadding(
-        encoded_profile, blockSize=16), key)
+        encoded_profile, block_size=16), key)
 
 def profile_decryptor(encrypted_profile, key):
     return key_value_parser(block.remove_pkcs_padding(
